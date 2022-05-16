@@ -22,9 +22,13 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-//const CHARGES_URL = "https://cert.api.fiservapps.com/ch/payments/v1/charges"
+const CHARGES_URL = "http://gorouter-env.eba-feu6zuyy.us-east-2.elasticbeanstalk.com/ch/payments/v1/charges"
 
-const CHARGES_URL = "http://localhost:8080/ch/payments/v1/charges"
+// const CHARGES_URL = "https://cert.api.fiservapps.com/ch/payments/v1/charges"
+
+// const CHARGES_URL = "http://localhost:5000/ch/payments/v1/charges"
+
+// const CHARGES_URL = "http://dstest-349919.ue.r.appspot.com/ch/payments/v1/charges"
 
 //const CHARGES_URL = "https://httpbin.org/post"
 
@@ -33,8 +37,60 @@ const key = "lq6sRHxltHk4PkB4myfSGalRzK9kvcir"
 const secret = "vZ9UUZ5gtzUPlbia8BgC2G6qzDJGmli38G1osZjJPDz"
 
 // Here are the bodies of the requests that we'll be sending
-const gCharge_data = "{\"amount\":{\"total\":500,\"currency\":\"USD\"},\"source\":{\"sourceType\":\"PaymentTrack\",\"encryptionData\":{\"encryptionType\":\"ON_GUARD\",\"encryptionTarget\":\"TRACK_2\",\"encryptionBlock\":\"4614507291879694=078443325742854\",\"keyId\":\"FFFF109700000E4000340114\",\"deviceType\":\"INGENICO\"},\"pinBlock\":{\"encryptedPin\":\"0FF7A610CC84CE40\",\"keySerialNumber\":\"FFFF3D3D3D00232002C9\"}},\"transactionDetails\":{\"captureFlag\":true},\"transactionInteraction\":{\"origin\":\"POS\",\"posEntryMode\":\"MAG_STRIPE\",\"posConditionCode\":\"CARD_PRESENT\",\"terminalTimestamp\":\"2022-03-10T04:26:56Z\",\"additionalPosInformation\":{\"dataEntrySource\":\"MOBILE_TERMINAL\",\"posFeatures\":{\"pinAuthenticationCapability\":\"CAN_ACCEPT_PIN\",\"terminalEntryCapability\":\"MAG_STRIPE_MANUAL_CHIP\"}}},\"merchantDetails\":{\"merchantId\":\"100009000000035\",\"terminalId\":\"10000002\"},\"additionalDataCommon\":{\"directedRouting\":{\"processors\":[{\"code\":\"NASHVILLE\",\"platform\":\"NORTH\",\"priority\":\"PRIMARY\"}]}}}"
-const gCancel_data = `{"amount":{"total":500,"currency":"USD"}, "merchantDetails": {"merchantId": "100009000000035", "terminalId": "10000002"}}`
+const gCancel_data = `{"amount":{"total":1,"currency":"USD"}, "merchantDetails": {"merchantId": "100009000000035", "terminalId": "10000002"}}`
+const gCapture_data = `{"amount":{"total":1,"currency":"USD"}, "merchantDetails": {"merchantId": "100009000000035", "terminalId": "10000002"}}`
+const gRefund_data = `{"amount":{"total":3,"currency":"USD"}, "merchantDetails": {"merchantId": "100009000000035", "terminalId": "10000002"}}`
+
+const gCharge_data = `{
+    "amount": {
+        "total": 3,
+        "currency": "USD"
+    },
+    "source": {
+          "sourceType": "PaymentTrack",
+        "encryptionData": {
+            "encryptionType": "ON_GUARD",
+            "encryptionTarget": "TRACK_2",
+            "encryptionBlock": "2205243045158404=49883671338327",
+            "keyId": "FFFF9999990217A000190114",
+            "deviceType": "INGENICO"
+        }
+    },
+    "transactionDetails": {
+         "captureFlag": true
+    },
+    "transactionInteraction": {
+         "origin": "POS",
+        "posEntryMode": "MAG_STRIPE",
+        "posConditionCode": "CARD_PRESENT", 
+        "terminalTimestamp": "2022-03-11T09:21:46Z",
+        "additionalPosInformation": {
+            "dataEntrySource": "MOBILE_POS",
+            "posFeatures": {
+                "pinAuthenticationCapability": "UNSPECIFIED",
+                "terminalEntryCapability": "MAG_STRIPE_ONLY"
+            }
+        }
+    },
+    "merchantDetails": {
+        "merchantId": "100009000000035",
+        "terminalId": "10000002"
+    },
+    "additionalDataCommon": {
+        "directedRouting": {
+            "processors": [
+                {
+                    "code": "NASHVILLE",
+                    "platform": "NORTH",
+                    "priority": "PRIMARY"
+                }
+            ]
+        }
+    }
+}`
+
+// Header value for the TestRun identifier
+const TEST_RUN_ID = "88888888"
 
 // Will be set in the charge request, and read in the cancel request
 var gTransactionId = ""
@@ -59,7 +115,7 @@ func cleanse(input string) string {
 	return strings.Trim(input, "\"")
 }
 
-func sendChargeRequest() {
+func sendAuthRequest() {
 
 	// Create an http client
 	client := &http.Client{
@@ -84,6 +140,9 @@ func sendChargeRequest() {
 	req.Header.Add("Api-Key", key)
 	req.Header.Add("Client-Request-Id", strconv.Itoa(int(clientRequestId)))
 	req.Header.Add("Authorization", signature)
+	req.Header.Add("X-TESTRUN-ID", TEST_RUN_ID)
+
+	req.Header.Add("xOriginator", "thd")
 
 	// Make http call
 	log.Println("Sending Charge request")
@@ -92,10 +151,13 @@ func sendChargeRequest() {
 	if err != nil || (resp.StatusCode != 201 && resp.StatusCode != 200) {
 		// handle error
 		log.Println("Error invoking charges endpoint:", resp.StatusCode)
+		defer resp.Body.Close()
+		body, _ := ioutil.ReadAll(resp.Body)
+		log.Print(string(body))
 	} else {
 		defer resp.Body.Close()
 		body, _ := ioutil.ReadAll(resp.Body)
-		//log.Print(string(body))
+		log.Print(string(body))
 
 		jsonResp := gjson.Parse(string(body))
 		gTransactionId = cleanse(jsonResp.Get("gatewayResponse.transactionProcessingDetails.transactionId").Raw)
@@ -130,6 +192,7 @@ func sendCancelRequest() {
 	req.Header.Add("Api-Key", key)
 	req.Header.Add("Client-Request-Id", strconv.Itoa(int(clientRequestId)))
 	req.Header.Add("Authorization", signature)
+	req.Header.Add("X-TESTRUN-ID", TEST_RUN_ID)
 
 	// Make http call
 	log.Println("Sending Cancel request")
@@ -138,6 +201,9 @@ func sendCancelRequest() {
 	if err != nil || (resp.StatusCode != 201 && resp.StatusCode != 200) {
 		// handle error
 		log.Println("Error invoking cancel endpoint:", resp.StatusCode)
+		defer resp.Body.Close()
+		body, _ := ioutil.ReadAll(resp.Body)
+		log.Print(string(body))
 	} else {
 		defer resp.Body.Close()
 		body, _ := ioutil.ReadAll(resp.Body)
@@ -150,7 +216,111 @@ func sendCancelRequest() {
 	}
 }
 
+func sendCaptureRequest() {
+
+	// Create an http client
+	client := &http.Client{
+		CheckRedirect: nil,
+	}
+
+	time := time.Now().UnixNano() / int64(time.Millisecond)
+
+	// Generate a nice random number (seeded w/current time) for idempotency check
+	randSource := rand.NewSource(time)
+	clientRequestId := rand.New(randSource).Intn(10000000) + 1
+
+	signature := getSignature(key, secret, gCapture_data, time, clientRequestId)
+
+	// Setup http request
+	capture_url := CHARGES_URL + "/" + gTransactionId + "/capture"
+	log.Println("Capture URL is", capture_url)
+	req, err := http.NewRequest("POST", capture_url, bytes.NewBuffer([]byte(gCapture_data)))
+	req.Header.Add("Accept", "application/json")
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Accept-language", "en")
+	req.Header.Add("Auth-Token-Type", "HMAC")
+	req.Header.Add("Timestamp", strconv.Itoa(int(time)))
+	req.Header.Add("Api-Key", key)
+	req.Header.Add("Client-Request-Id", strconv.Itoa(int(clientRequestId)))
+	req.Header.Add("Authorization", signature)
+	req.Header.Add("X-TESTRUN-ID", TEST_RUN_ID)
+
+	// Make http call
+	log.Println("Sending Capture request")
+
+	resp, err := client.Do(req)
+	if err != nil || (resp.StatusCode != 201 && resp.StatusCode != 200) {
+		// handle error
+		log.Println("Error invoking capture endpoint:", resp.StatusCode)
+		defer resp.Body.Close()
+		body, _ := ioutil.ReadAll(resp.Body)
+		log.Print(string(body))
+	} else {
+		defer resp.Body.Close()
+		body, _ := ioutil.ReadAll(resp.Body)
+		//log.Print(string(body))
+
+		jsonResp := gjson.Parse(string(body))
+		// Set the global transactionId so we can cancel it next
+		gTransactionId = cleanse(jsonResp.Get("gatewayResponse.transactionProcessingDetails.transactionId").Raw)
+		log.Println("Capture request successful, transactionId is", gTransactionId)
+	}
+}
+
+func sendRefundRequest() {
+
+	// Create an http client
+	client := &http.Client{
+		CheckRedirect: nil,
+	}
+
+	time := time.Now().UnixNano() / int64(time.Millisecond)
+
+	// Generate a nice random number (seeded w/current time) for idempotency check
+	randSource := rand.NewSource(time)
+	clientRequestId := rand.New(randSource).Intn(10000000) + 1
+
+	signature := getSignature(key, secret, gRefund_data, time, clientRequestId)
+
+	// Setup http request
+	refund_url := CHARGES_URL + "/" + gTransactionId + "/refund"
+	log.Println("Refund URL is", refund_url)
+	req, err := http.NewRequest("POST", refund_url, bytes.NewBuffer([]byte(gRefund_data)))
+	req.Header.Add("Accept", "application/json")
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Accept-language", "en")
+	req.Header.Add("Auth-Token-Type", "HMAC")
+	req.Header.Add("Timestamp", strconv.Itoa(int(time)))
+	req.Header.Add("Api-Key", key)
+	req.Header.Add("Client-Request-Id", strconv.Itoa(int(clientRequestId)))
+	req.Header.Add("Authorization", signature)
+	req.Header.Add("X-TESTRUN-ID", TEST_RUN_ID)
+
+	// Make http call
+	log.Println("Sending Refund request")
+
+	resp, err := client.Do(req)
+	if err != nil || (resp.StatusCode != 201 && resp.StatusCode != 200) {
+		// handle error
+		log.Println("Error invoking refund endpoint:", resp.StatusCode)
+		defer resp.Body.Close()
+		body, _ := ioutil.ReadAll(resp.Body)
+		log.Print(string(body))
+	} else {
+		defer resp.Body.Close()
+		body, _ := ioutil.ReadAll(resp.Body)
+		//log.Print(string(body))
+
+		jsonResp := gjson.Parse(string(body))
+		// Set the global transactionId so we can cancel it next
+		gTransactionId = cleanse(jsonResp.Get("gatewayResponse.transactionProcessingDetails.transactionId").Raw)
+		log.Println("Refund request successful, transactionId is", gTransactionId)
+	}
+}
+
 func main() {
-	sendChargeRequest()
+	sendAuthRequest()
+	sendRefundRequest()
+	sendCaptureRequest()
 	sendCancelRequest()
 }
