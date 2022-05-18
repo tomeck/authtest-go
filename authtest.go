@@ -23,6 +23,7 @@ import (
 )
 
 const CHARGES_URL = "http://gorouter-env.eba-feu6zuyy.us-east-2.elasticbeanstalk.com/ch/payments/v1/charges"
+const INQUIRY_URL = "http://gorouter-env.eba-feu6zuyy.us-east-2.elasticbeanstalk.com/ch/payments/v1/transaction-inquiry"
 
 // const CHARGES_URL = "https://cert.api.fiservapps.com/ch/payments/v1/charges"
 
@@ -40,6 +41,8 @@ const secret = "vZ9UUZ5gtzUPlbia8BgC2G6qzDJGmli38G1osZjJPDz"
 const gCancel_data = `{"amount":{"total":1,"currency":"USD"}, "merchantDetails": {"merchantId": "100009000000035", "terminalId": "10000002"}}`
 const gCapture_data = `{"amount":{"total":1,"currency":"USD"}, "merchantDetails": {"merchantId": "100009000000035", "terminalId": "10000002"}}`
 const gRefund_data = `{"amount":{"total":3,"currency":"USD"}, "merchantDetails": {"merchantId": "100009000000035", "terminalId": "10000002"}}`
+
+const gInquiry_data = `{"transactionDetails":{"primaryTransactionId":"b5275cf57d7b43a8a448752372e8f4b1"}}`
 
 const gCharge_data = `{
     "amount": {
@@ -318,7 +321,57 @@ func sendRefundRequest() {
 	}
 }
 
+func sendInquiryRequest() {
+
+	// Create an http client
+	client := &http.Client{
+		CheckRedirect: nil,
+	}
+
+	time := time.Now().UnixNano() / int64(time.Millisecond)
+
+	// Generate a nice random number (seeded w/current time) for idempotency check
+	randSource := rand.NewSource(time)
+	clientRequestId := rand.New(randSource).Intn(10000000) + 1
+
+	signature := getSignature(key, secret, gInquiry_data, time, clientRequestId)
+
+	// Setup http request
+	inquiry_url := INQUIRY_URL
+	log.Println("Inquiry URL is", inquiry_url)
+	req, err := http.NewRequest("POST", inquiry_url, bytes.NewBuffer([]byte(gInquiry_data)))
+	req.Header.Add("Accept", "application/json")
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Accept-language", "en")
+	req.Header.Add("Auth-Token-Type", "HMAC")
+	req.Header.Add("Timestamp", strconv.Itoa(int(time)))
+	req.Header.Add("Api-Key", key)
+	req.Header.Add("Client-Request-Id", strconv.Itoa(int(clientRequestId)))
+	req.Header.Add("Authorization", signature)
+	req.Header.Add("X-TESTRUN-ID", TEST_RUN_ID)
+
+	// Make http call
+	log.Println("Sending Inquiry request")
+
+	resp, err := client.Do(req)
+	if err != nil || (resp.StatusCode != 200) {
+		// handle error
+		log.Println("Error invoking Inquiry endpoint:", resp.StatusCode)
+		defer resp.Body.Close()
+		body, _ := ioutil.ReadAll(resp.Body)
+		log.Print(string(body))
+	} else {
+		defer resp.Body.Close()
+		body, _ := ioutil.ReadAll(resp.Body)
+		// log.Print(string(body))
+
+		jsonResp := gjson.Parse(string(body))
+		log.Println("Inquiry request successful, response is\n", jsonResp)
+	}
+}
+
 func main() {
+	sendInquiryRequest()
 	sendAuthRequest()
 	sendRefundRequest()
 	sendCaptureRequest()
